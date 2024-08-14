@@ -90,8 +90,7 @@ $ python3 run.py -f ./targets.txt -r XML -w https://webhook.url/endpoint --crawl
 
 ## Features
 
-- Blinksless Operation
-**Blinks** runs Burp Suite scans in a Blinksless mode, allowing for automation without the need for a graphical user interface (GUI). This makes it ideal for integration into pipelines or remote servers.
+- **Blinks** runs Burp Suite scans in a Blinksless mode, allowing for automation without the need for a graphical user interface (GUI). This makes it ideal for integration into pipelines or remote servers.
 - Single and Batch URL Processing
   - **Single URL Processing:** Easily scan a single target URL.
   - **Batch URL Processing:** Supply a file containing multiple URLs, and Blinks will process each one sequentially, making it efficient for large-scale assessments.
@@ -100,10 +99,10 @@ $ python3 run.py -f ./targets.txt -r XML -w https://webhook.url/endpoint --crawl
   - **HTML Reports:** Easy-to-read format for human review.
   - **XML Reports:** Structured format for machine processing or further analysis.
 
-- Webhook Integration for Real-Time Notifications
+- Webhook Integration for Real-Time Notifications:
 **Blinks** supports webhook integration, allowing you to send scan results directly to a specified URL. This feature is particularly useful for real-time monitoring and integration with alerting systems.
 
-- Crawl Only Mode
+- Crawl Only Mode:
 If you only need to map out the structure of a web application without performing a full security scan, you can use the **Crawl Only** mode. This limits the scan to discovering URLs and resources.
 
 - SOCKS5 Proxy Support
