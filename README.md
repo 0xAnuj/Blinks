@@ -64,7 +64,7 @@ Arguments:
 ## Features
 
 - Blinksless Operation
-**Blinks** runs Burp Suite scans in a Blinksless mode, allowing for automation without the need for a graphical user interface (GUI). This makes it ideal for integration into CI/CD pipelines or remote servers.
+**Blinks** runs Burp Suite scans in a Blinksless mode, allowing for automation without the need for a graphical user interface (GUI). This makes it ideal for integration into pipelines or remote servers.
 - Single and Batch URL Processing
   - **Single URL Processing:** Easily scan a single target URL.
   - **Batch URL Processing:** Supply a file containing multiple URLs, and Blinks will process each one sequentially, making it efficient for large-scale assessments.
