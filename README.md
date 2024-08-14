@@ -9,6 +9,7 @@
 Blinks is a powerful Burp Suite extension that automates active scanning with Burp Suite Pro and enhances its functionality. With the integration of webhooks, this tool sends real-time updates whenever a new issue is identified, directly to your preferred endpoint. No more waiting for final reports – you get instant, actionable insights! 🛠️
 ![blinks_terminal](https://github.com/user-attachments/assets/f986932c-455b-4fdc-aeb6-36b339c92704)
 
+
 ## Usage
 > Note: Blinks only works with Licensed Burp Suite Professional, Make sure you set up your Burp Suite License before setting up Blinks.
 
@@ -60,6 +61,32 @@ Arguments:
   --crawlonly           Perfom crawl only scan, it will save all crawled requests under ./data/
   --socks5              Use socks5 for VPN at localhost:9090
 ```
+##### Install Requirements
+
+```bash
+$ pip3 install -r requirements.txt
+```
+##### Run with a single URL and XML report
+
+```bash
+$ python3 run.py -u https://example.com -r XML
+```
+##### Run with a list of URLs with webhook
+
+```bash
+$ python3 run.py -f ./targets.txt -r XML -w https://webhook.url/endpoint
+```
+
+##### Run with a list of URLs with webhook and multiple headers
+
+```bash
+$ python3 run.py -f ./targets.txt -r XML -w https://webhook.url/endpoint --header "Cookie:session=value" --header "Authorization: Basic test"
+```
+##### Run with a crawl only mode
+
+```bash
+$ python3 run.py -f ./targets.txt -r XML -w https://webhook.url/endpoint --crawlonly
+```
 
 ## Features
 
@@ -84,6 +111,12 @@ For enhanced security during scans, especially in environments requiring VPN con
 
 - Flexible Configuration
 **Blinks** provides a JSON-based configuration file (`config.json`) that allows you to customize various aspects of the scan.
+  
+## Tested on
+
+- Operating System: `Ubuntu 24.04 LTS (AWS)` | `Ubuntu WSL` | `Windows 11 23H2`
+- Burp Suite Pro Version: `v2024.6.6`
+- Java Version: `openjdk 21.0.4 2024-07-16`
 
 ## Attach More Extensions
 
