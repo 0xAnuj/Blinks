@@ -1,11 +1,11 @@
-# Blinks - Burp Headless Scanning Tool [v0.5b (14-Aug-2024)]
+# Blinks - Burp Headless Scanning Tool [v0.6b (10-Nov-2024)]
 # Author: Punit (0xAnuj)
 # Linkedin: https://www.linkedin.com/in/0xanuj/
 from burp import IBurpExtender, IScannerListener, IHttpListener, IScanIssue, IScanQueueItem
 from java.io import BufferedReader, FileReader, File, PrintWriter, FileWriter, InputStreamReader, OutputStream
 from java.net import URL, HttpURLConnection, URLDecoder
 import datetime
-from threading import Thread, Event, Lock
+from threading import Thread, Event, Lock,Timer
 import time
 import re,os
 import json
@@ -13,8 +13,9 @@ import json
 class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueItem):
 
     isActiveScanActive = False  
+    IDLE_TIMEOUT = 7200
     INACTIVITY_THRESHOLD = 10  
-    #TIMEOUT_SECONDS = 10 
+    last_issue_time = datetime.datetime.now() 226
 
     def registerExtenderCallbacks(self, callbacks):
         self._callbacks = callbacks
@@ -23,8 +24,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         self._lastRequestTime = datetime.datetime.now()
         self._inactivity_event = Event()
         self._lock = Lock()
-
-
         callbacks.setExtensionName("Blinks")
         callbacks.registerScannerListener(self)
         callbacks.registerHttpListener(self)
@@ -32,15 +31,16 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         self.current_dir = os.getcwd()
         self.extConfig = self.load_config("{}/config.json".format(self.current_dir))
         self.log_file = "{}/logs/scan_status_{}.log".format(self.current_dir,self.extConfig["initialURL"]["host"])
-        self.crawled_requests_file = "{}/data/crawled_data_{}.txt".format(self.current_dir,self.extConfig["initialURL"]["host"])
-        self.active_requests_file = "{}/data/active_check_{}.txt".format(self.current_dir,self.extConfig["initialURL"]["host"])
-        self.proxy_requests_file = "{}/data/proxy_data_{}.txt".format(self.current_dir,self.extConfig["initialURL"]["host"])
+        self.crawled_requests_file = "{}/data/crawled_data_{}_{}.txt".format(self.current_dir,self.extConfig["initialURL"]["host"],datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+        self.active_requests_file = "{}/data/active_check_{}_{}.txt".format(self.current_dir,self.extConfig["initialURL"]["host"],datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
+        self.proxy_requests_file = "{}/data/proxy_data_{}_{}.txt".format(self.current_dir,self.extConfig["initialURL"]["host"],datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"))
         self.report_name = self.extConfig["initialURL"]["host"]
         self.reporttype = self.extConfig["reporttype"]
         self.webhookURL = self.extConfig["webhookurl"]
         self.crawlonly = self.extConfig["crawlonly"]
         self.proxyonly = self.extConfig["proxyonly"]
         self.headers = self.extConfig['headers']
+        self.timelimited = self.extConfig['time']
         self.log_message(self.headers)
         self.log_message("Extension Loaded Successfully")
         self.log_message("Blinks v0.5b  Author: Punit")
@@ -169,6 +169,36 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         except Exception as e:
             self.log_message("Unexpected error in process_requests: {}".format(str(e)))
 
+    def reset_data_files(self):
+        if self.isActiveScanActive:
+            self.log_message("Inside Reset Files")
+            try: 
+                with open(self.active_requests_file, "w") as f:
+                    f.write("")
+                with open(self.crawled_requests_file, "w") as f:
+                    f.write("")   
+                self.log_message("Done reseting files") 
+                self.log_message("EXITING NOW!")
+                self._callbacks.exitSuite(False)
+            except Exception as e:
+                self.log_message(e)
+
+    def start_time_limited_scan(self):
+        scan_duration_seconds = int(self.timelimited) * 60
+        self.log_message("Starting time-limited scan for {} minutes.".format(self.timelimited))
+        Timer(scan_duration_seconds, self.end_scan_due_to_time_limit).start()
+
+    def end_scan_due_to_time_limit(self):
+        self.log_message("Time limit reached. Finalizing scan and generating final report.")
+        self.report_file = "{}/reports/Final_scan_report_{}_{}.{}".format(
+            self.current_dir,
+            self.report_name,
+            datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"),
+            self.reporttype
+        )
+        self.generate_report(self.reporttype, self.report_file, is_final=True)
+        # Exit the Burp Suite
+        self._callbacks.exitSuite(False)
 
     def monitor_file_size(self):
         import os, time
@@ -183,6 +213,7 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         while True:
             try:
                 current_size = os.path.getsize(file)
+                self.log_message(current_size)
                 if current_size == last_size:
                     if stable_time is None:
                         stable_time = time.time()  
@@ -194,8 +225,10 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
                             self._callbacks.exitSuite(False)
                         else:
                             self.isActiveScanActive = True
+                            if self.timelimited > 0:
+                                self.start_time_limited_scan()
                             Thread(target=self.monitor_file_size_active).start()
-                              # Start monitoring scan status
+                            Thread(target=self.monitor_idle_time).start()
                             self.log_message(self.isActiveScanActive)
                             self.ActiveScanFileRun(self.isActiveScanActive)
                             break 
@@ -207,7 +240,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
             time.sleep(1) 
 
     def monitor_scan_status(self,scan_queue_item):
-        #need to work on this logic
           if self.isActiveScanActive:
                 try:
                     while True:
@@ -221,41 +253,83 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         import os, time
         last_size = -1
         stable_time = None
-        self.log_message("Active: Inside Monitor function last size :{} and Stable_time: {} ".format(last_size, stable_time))
+        max_wait_time = 300  # 5 minutes max wait
+
+        self.log_message("Active: Inside Monitor function last size: {} and Stable_time: {}".format(last_size, stable_time))
+        
         while True:
             if self.isActiveScanActive:
                 try:
                     current_size = os.path.getsize(self.active_requests_file)
+                    self.log_message("Current file size: {}".format(current_size))
+                    
                     if current_size == last_size:
                         if stable_time is None:
-                            stable_time = time.time()  
+                            stable_time = time.time()
                         elif time.time() - stable_time > 120:
-                            self.log_message("Active Scan done.")
-                            self.log_message(self.isActiveScanActive)
+                            self.log_message("Active scan completed. Finalizing report.")
                             self.report_file = "{}/reports/Final_scan_report_{}_{}.{}".format(self.current_dir,self.report_name,datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"),self.reporttype)
-                            self.generate_report(self.reporttype, self.report_file)
-                            self.reset_data_files()
-                            time.sleep(5)
-                            self.log_message("scanning Finished!")
+                            self.generate_report(self.reporttype, self.report_file, is_final=True)
                             self._callbacks.exitSuite(False)
-                            break  
+                            break
+                        elif time.time() - stable_time > max_wait_time:
+                            self.log_message("Exceeded max wait time. Exiting to avoid any freeze.")
+                            break
                     else:
-                        stable_time = None  
+                        stable_time = None
                     last_size = current_size
+
                 except FileNotFoundError:
                     self.log_message("Active requests file not found.")
-            time.sleep(1) 
+                time.sleep(5)
 
-    def reset_data_files(self):
-         if self.isActiveScanActive:
-            try: 
-                with open(self.active_requests_file, "w") as f:
-                    f.write("")
-                with open(self.crawled_requests_file, "w") as f:
-                    f.write("")    
-                return
-            except Exception as e:
-                self.log_message(e)
+
+    def monitor_idle_time(self):
+        if self.isActiveScanActive:
+            while True:
+                current_time = datetime.datetime.now()
+                idle_duration = (current_time - self.last_issue_time).total_seconds()
+
+                if idle_duration > self.IDLE_TIMEOUT:
+                    self.log_message("No new issues detected for 2 hours. Generating final report and exiting.")
+                    self.generate_final_report_and_exit()
+                    break
+
+                time.sleep(300)  # Check every 5 minutes
+
+
+    def generate_report(self, reportType, reportFile, is_final=False):
+        try:
+            issues = self._callbacks.getScanIssues(None)
+            report_suffix = "FINAL" if is_final else "PENDING"
+            if is_final:
+                report_file_path = "{}/reports/{}_scan_report_{}_{}.{}".format(
+                    self.current_dir, report_suffix, self.report_name, datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"), reportType
+                )
+            else:
+                report_file_path = "{}/reports/{}_scan_report_{}.{}".format(
+                    self.current_dir, report_suffix, self.report_name, reportType
+                )    
+
+            if issues:
+                self.log_message("Number of issues found: {}".format(len(issues)))
+                file = File(report_file_path)
+                self._callbacks.generateScanReport(reportType, issues, file)
+                self.log_message("Report saved to {}".format(report_file_path))
+                if is_final:
+                    self.reset_data_files()
+            else:
+                self.log_message("No issues found to report.")
+
+        except Exception as e:
+            self.log_message("Error saving report: {}".format(str(e)), error=True)
+
+    def generate_final_report_and_exit(self):
+        """Generates the final report and exits Burp."""
+        self.report_file = "{}/reports/Final_scan_report_{}_{}.{}".format(self.current_dir,self.report_name,datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S"),self.reporttype)
+        self.generate_report(self.reporttype, self.report_file, is_final=True)
+        self._callbacks.exitSuite(False)
+
 
     def scan_url(self, url):
         try:
@@ -267,7 +341,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
             
             hostname_segments = hostname.split('.')
             
-            # Check if hostname is a top-level domain (two segments)
             if len(hostname_segments) == 2:
                 # Construct www. subdomain with the same protocol
                 www_url = "{}://www.{}".format(protocol, hostname)
@@ -287,7 +360,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
 
         except Exception as e:
             self.log_message("Error scanning URL {}: {}".format(url, str(e)), error=True)
-
 
 
     def processHttpMessage(self, toolFlag, messageIsRequest, messageInfo):
@@ -384,19 +456,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         except Exception as e:
             print("Failed to log message: {}".format(str(e)))
 
-    def generate_report(self, reportType, reportFile):
-        try:
-            issues = self._callbacks.getScanIssues(None)  
-            if issues:
-                self.log_message("Number of issues found: {}".format(len(issues)))
-                file = File(reportFile)
-                self._callbacks.generateScanReport(reportType, issues, file)
-                self.log_message("Report saved to {}".format(reportFile))
-            else:
-                self.log_message("No issues found to report.")
-        except Exception as e:
-            self.log_message("Error saving report: {}".format(str(e)), error=True)
-
     def load_config(self, config_file):
         
         with open(config_file, 'r') as file:
@@ -411,49 +470,59 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
             if path.endswith(".{}".format(ext)):
                 return True
         return False
-    # For ongoing reports
+    
+    #Ongoing reporting
     def newScanIssue(self, issue):
         self.log_message("New scan issue identified: {}".format(issue.getIssueName()))
+        self.last_issue_time = datetime.datetime.now()  # Update last issue time
+        self.report_file = "{}/reports/SCAN_PENDING_issues_report_{}.{}".format(self.current_dir, self.report_name, self.reporttype)
+        self.generate_report(self.reporttype, self.report_file)
 
         try:
             issue_details = {
-                "issue_name": str(issue.getIssueName()),
-                "severity": str(issue.getSeverity()),
-                "confidence": str(issue.getConfidence()),
-                "url": str(issue.getUrl()),
-                "issue_detail": issue.getIssueDetail() and str(issue.getIssueDetail()),
-                "issue_background": issue.getIssueBackground() and str(issue.getIssueBackground()),
-                "remediation_detail": issue.getRemediationDetail() and str(issue.getRemediationDetail()),
-                "remediation_background": issue.getRemediationBackground() and str(issue.getRemediationBackground()),
-                "host": str(issue.getHttpMessages()[0].getHttpService().getHost()),
-                "port": issue.getHttpMessages()[0].getHttpService().getPort(),
-                "protocol": "https" if issue.getHttpMessages()[0].getHttpService().getProtocol() else "http"
+                "issue_name": str(issue.getIssueName().encode('utf-8', errors='ignore').decode('utf-8')),
+                "severity": str(issue.getSeverity().encode('utf-8', errors='ignore').decode('utf-8')),
+                "confidence": str(issue.getConfidence().encode('utf-8', errors='ignore').decode('utf-8')),
+                "url": str(issue.getUrl().toString().encode('utf-8', errors='ignore').decode('utf-8')),
+                "issue_detail": issue.getIssueDetail() and str(issue.getIssueDetail().encode('utf-8', errors='ignore').decode('utf-8')),
+                "issue_background": issue.getIssueBackground() and str(issue.getIssueBackground().encode('utf-8', errors='ignore').decode('utf-8')),
+                "remediation_detail": issue.getRemediationDetail() and str(issue.getRemediationDetail().encode('utf-8', errors='ignore').decode('utf-8')),
+                "remediation_background": issue.getRemediationBackground() and str(issue.getRemediationBackground().encode('utf-8', errors='ignore').decode('utf-8'))
             }
 
-            for i, http_message in enumerate(issue.getHttpMessages()):
-                request_info = self._helpers.analyzeRequest(http_message)
-                response_info = self._helpers.analyzeResponse(http_message.getResponse())
-                
-                request_headers = [str(header) for header in request_info.getHeaders()]
-                request_body = str(self._helpers.bytesToString(http_message.getRequest())[request_info.getBodyOffset():])
-                
-                response_headers = [str(header) for header in response_info.getHeaders()]
-                response_body = str(self._helpers.bytesToString(http_message.getResponse())[response_info.getBodyOffset():])
+            http_messages = issue.getHttpMessages()
+            if http_messages and len(http_messages) > 0:
+                first_http_message = http_messages[0]
+                issue_details["host"] = str(first_http_message.getHttpService().getHost())
+                issue_details["port"] = first_http_message.getHttpService().getPort()
+                issue_details["protocol"] = "https" if first_http_message.getHttpService().getProtocol() else "http"
 
-                issue_details["request_{}_headers".format(i+1)] = request_headers
-                issue_details["request_{}_body".format(i+1)] = request_body
-                issue_details["response_{}_headers".format(i+1)] = response_headers
-                issue_details["response_{}_body".format(i+1)] = response_body
-            json_data = json.dumps(issue_details, ensure_ascii=False)
+                for i, http_message in enumerate(http_messages):
+                    request_info = self._helpers.analyzeRequest(http_message)
+                    response_info = self._helpers.analyzeResponse(http_message.getResponse())
 
-            json_data = json_data.replace("\\/", "/")
+                    request_headers = [str(header.encode('utf-8', errors='ignore').decode('utf-8')) for header in request_info.getHeaders()]
+                    request_body = str(self._helpers.bytesToString(http_message.getRequest())[request_info.getBodyOffset():].encode('utf-8', errors='ignore').decode('utf-8'))
+                    
+                    response_headers = [str(header.encode('utf-8', errors='ignore').decode('utf-8')) for header in response_info.getHeaders()] if http_message.getResponse() else []
+                    response_body = str(self._helpers.bytesToString(http_message.getResponse())[response_info.getBodyOffset():].encode('utf-8', errors='ignore').decode('utf-8')) if http_message.getResponse() else ""
+
+                    issue_details["request_{}_headers".format(i+1)] = request_headers
+                    issue_details["request_{}_body".format(i+1)] = request_body
+                    issue_details["response_{}_headers".format(i+1)] = response_headers
+                    issue_details["response_{}_body".format(i+1)] = response_body
+            else:
+                self.log_message("No HTTP messages found for issue: {}".format(issue.getIssueName()))
+
+            json_data = json.dumps(issue_details, ensure_ascii=False).encode('utf-8')
+            
             self.send_issue_to_webhook(json_data)
-            self.report_file = "{}/reports/SCAN_PENDING_issues_report_{}.{}".format(self.current_dir,self.report_name,self.reporttype)
-            self.generate_report(self.reporttype, self.report_file)    
-
+            self.report_file = "{}/reports/SCAN_PENDING_issues_report_{}.{}".format(self.current_dir, self.report_name, self.reporttype)
+            self.generate_report(self.reporttype, self.report_file)
 
         except Exception as e:
             self.log_message("ERROR: Error processing issue details: {}".format(str(e)), error=True)
+
 
     def send_issue_to_webhook(self, json_data):
         try:
@@ -466,7 +535,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
             conn.setRequestProperty("Content-Type", "application/json")
             conn.setDoOutput(True)
 
-            # Write the JSON data to the output stream
             output_stream = conn.getOutputStream()
             output_stream.write(json_data.encode('utf-8'))
             output_stream.close()

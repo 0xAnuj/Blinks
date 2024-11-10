@@ -1,13 +1,18 @@
 import os
 import json
+import glob
 import httpx
 import subprocess
 import argparse
+import time
 
 current_path = os.getcwd()
 new_target_file_path = os.path.join(current_path, 'new_target.txt')
 config_file_path = os.path.join(current_path, 'config.json')
 burpconfig = f"{current_path}/burpconfig/userconfig.json"
+data_folder  = f"{current_path}/data"
+files = glob.glob(f"{data_folder}/*")
+
 
 new_extension = {
     "errors": "console",
@@ -108,8 +113,8 @@ def perform_task(url, webhook, reporttype, crawlonly, config_template):
     try:
         print(f"[+] Scanning {url}. See logs under ./logs")
         process = subprocess.run(command, shell=True, check=True, capture_output=True, text=True)
-        # print(process.stdout) 
-        # print(process.stderr) 
+        #print(process.stdout) 
+        #print(process.stderr) 
     except subprocess.CalledProcessError as e:
         print(f"Command '{e.cmd}' returned non-zero exit status {e.returncode}.")
         print(f"Output: {e.output}")
@@ -123,7 +128,7 @@ def main():
     ██████╔╝██║     ██║██╔██╗ ██║█████╔╝ ███████╗
     ██╔══██╗██║     ██║██║╚██╗██║██╔═██╗ ╚════██║
     ██████╔╝███████╗██║██║ ╚████║██║  ██╗███████║
-    ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝ v0.5b                           
+    ╚═════╝ ╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝ v0.6b                           
     BURP HEADLESS SCANNING TOOL     Author: Punit     
 
     Find reports under ./reports/<Report>.XML       
@@ -133,10 +138,13 @@ def main():
     parser.add_argument('-u','--url', help='Single URL to process')
     parser.add_argument('-f','--file', help='File containing URLs to process')
     parser.add_argument('-w','--webhook', default=None, help='Webhook URL (default: NULL)')
+    parser.add_argument('-t','--timelimit', default=0, help='Time limited testing [Mins] (default: Limitless)')
     parser.add_argument('-r','--reporttype', required=True, choices=['HTML', 'XML'], help='Report type (HTML or XML)')
     parser.add_argument('--header', action='append', help='Custom headers/cookies to add to the requests (format: HeaderName:HeaderValue)')
     parser.add_argument('--crawlonly', action='store_true', help='Set crawlonly to true in config.json')
     parser.add_argument('--socks5', action='store_true', help='Use socks5 for VPN at localhost:9090')
+    parser.add_argument('--reset', action='store_true', help='Reset all active/crawl data')
+
 
     args = parser.parse_args()
     if args.url and args.file:
@@ -150,6 +158,28 @@ def main():
     if not extension_already_present:
         update_burp_config()
         print("Extension added to the Burp configuration.")
+
+    if args.reset:
+        if files:
+            for file in files:
+                try:
+                    os.remove(file)
+                    print("[!]: Found old data.. deleting please wait")
+                    print(f"Deleted: {file}")
+                except Exception as e:
+                    print(f"[E] Error deleting {file}: {e}")
+            print("[+] Old Data have been deleted.\n")
+        else:
+            print("[+] No Old Data Found")
+
+    if args.timelimit:
+        timelimit = args.timelimit
+        print(f"[+] Time Limited Testing Initiated for each Active Scan, Time: {timelimit} mins\n")
+        config_template["time"] = time
+        update_blinks_config()
+    else:
+        config_template["time"] = 0
+        update_blinks_config()
 
     if args.socks5:
         print("[+] Sock5 Enabled, Listening at 127.0.0.1:9090")
@@ -182,6 +212,8 @@ def main():
     new_urls = read_urls(new_target_file_path)
     for url in new_urls:
         perform_task(url, args.webhook, args.reporttype, args.crawlonly, config_template)
+        print("[+] Halting for 5 seconds")
+        time.sleep(5)
 
 if __name__ == '__main__':
     main()
