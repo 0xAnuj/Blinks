@@ -140,8 +140,8 @@ def main():
     parser.add_argument('-w','--webhook', default=None, help='Webhook URL (default: NULL)')
     parser.add_argument('-t','--timelimit', default=0, help='Time limited testing [Mins] (default: Limitless)')
     parser.add_argument('-r','--reporttype', required=True, choices=['HTML', 'XML'], help='Report type (HTML or XML)')
-    parser.add_argument('--header', action='append', help='Custom headers/cookies to add to the requests (format: HeaderName:HeaderValue)')
-    parser.add_argument('--crawlonly', action='store_true', help='Set crawlonly to true in config.json')
+    parser.add_argument('--header', action='append', help='Custom headers/cookies to add to the requests (format: HeaderName:HeaderValue), reuse the argument for multiple headers')
+    parser.add_argument('--crawlonly', action='store_true', help='Perfom crawl only scan, it will save all crawled requests under ./data/')
     parser.add_argument('--socks5', action='store_true', help='Use socks5 for VPN at localhost:9090')
     parser.add_argument('--reset', action='store_true', help='Reset all active/crawl data')
 
