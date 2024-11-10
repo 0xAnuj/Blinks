@@ -213,7 +213,6 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         while True:
             try:
                 current_size = os.path.getsize(file)
-                self.log_message(current_size)
                 if current_size == last_size:
                     if stable_time is None:
                         stable_time = time.time()  
@@ -260,9 +259,7 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
         while True:
             if self.isActiveScanActive:
                 try:
-                    current_size = os.path.getsize(self.active_requests_file)
-                    self.log_message("Current file size: {}".format(current_size))
-                    
+                    current_size = os.path.getsize(self.active_requests_file)                    
                     if current_size == last_size:
                         if stable_time is None:
                             stable_time = time.time()
