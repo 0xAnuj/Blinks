@@ -15,7 +15,7 @@ class BurpExtender(IBurpExtender, IScannerListener, IHttpListener, IScanQueueIte
     isActiveScanActive = False  
     IDLE_TIMEOUT = 7200
     INACTIVITY_THRESHOLD = 10  
-    last_issue_time = datetime.datetime.now() 226
+    last_issue_time = datetime.datetime.now() 
 
     def registerExtenderCallbacks(self, callbacks):
         self._callbacks = callbacks
